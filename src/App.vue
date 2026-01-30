@@ -8,9 +8,6 @@
             Автоматизация отчётов и сверка метрик
           </div>
         </div>
-        <v-chip color="primary" variant="outlined" size="small">
-          Клиентское приложение
-        </v-chip>
       </v-container>
     </v-app-bar>
 

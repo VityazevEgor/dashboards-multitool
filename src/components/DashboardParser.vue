@@ -11,7 +11,7 @@
         <div class="text-overline text-primary mb-2">Шаг 1</div>
         <div class="text-h5 font-weight-bold mb-2">HTML код дашборда</div>
         <div class="text-body-2 text-medium-emphasis mb-4">
-          Вставьте HTML код в поле или загрузите файл. Все данные обрабатываются локально.
+          Вставьте HTML код в поле или загрузите файл.
         </div>
 
         <v-textarea

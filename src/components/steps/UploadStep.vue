@@ -3,7 +3,7 @@
     <div class="text-overline text-primary mb-2">Шаг 1</div>
     <div class="text-h5 font-weight-bold mb-2">Загрузите Excel</div>
     <div class="text-body-2 text-medium-emphasis mb-4">
-      Поддерживаются файлы .xlsx и .xls. Все данные обрабатываются в браузере.
+      Поддерживаются файлы .xlsx и .xls.
     </div>
     <v-file-input
       v-model="localFile"
