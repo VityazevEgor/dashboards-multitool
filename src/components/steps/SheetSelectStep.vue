@@ -60,6 +60,37 @@
       </v-col>
     </v-row>
 
+    <v-row class="mt-1">
+      <v-col cols="12" md="6">
+        <v-autocomplete
+          :items="greenValueColumnOptions"
+          label="Столбец значений (зеленая зона)"
+          variant="outlined"
+          color="primary"
+          :model-value="greenValueColumn"
+          :disabled="!greenValueColumnOptions.length"
+          clearable
+          hint="Выберите столбец с числами для визуализации"
+          persistent-hint
+          @update:model-value="updateGreenValueColumn"
+        />
+      </v-col>
+      <v-col cols="12" md="6">
+        <v-autocomplete
+          :items="blueValueColumnOptions"
+          label="Столбец значений (синяя зона)"
+          variant="outlined"
+          color="primary"
+          :model-value="blueValueColumn"
+          :disabled="!blueValueColumnOptions.length"
+          clearable
+          hint="Выберите столбец с числами для визуализации"
+          persistent-hint
+          @update:model-value="updateBlueValueColumn"
+        />
+      </v-col>
+    </v-row>
+
     <v-alert
       v-if="error"
       type="error"
@@ -101,6 +132,22 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  greenValueColumnOptions: {
+    type: Array,
+    default: () => [],
+  },
+  blueValueColumnOptions: {
+    type: Array,
+    default: () => [],
+  },
+  greenValueColumn: {
+    type: String,
+    default: '',
+  },
+  blueValueColumn: {
+    type: String,
+    default: '',
+  },
   error: {
     type: String,
     default: '',
@@ -112,10 +159,14 @@ const emit = defineEmits([
   'update:blueSheet',
   'update:greenStatusColumn',
   'update:blueStatusColumn',
+  'update:greenValueColumn',
+  'update:blueValueColumn',
 ])
 
 const updateGreen = (value) => emit('update:greenSheet', value)
 const updateBlue = (value) => emit('update:blueSheet', value)
 const updateGreenStatusColumn = (value) => emit('update:greenStatusColumn', value)
 const updateBlueStatusColumn = (value) => emit('update:blueStatusColumn', value)
+const updateGreenValueColumn = (value) => emit('update:greenValueColumn', value)
+const updateBlueValueColumn = (value) => emit('update:blueValueColumn', value)
 </script>

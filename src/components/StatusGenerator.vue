@@ -21,11 +21,17 @@
         :blue-status-column-options="statusColumnOptions.blue"
         :green-status-column="selectedStatusColumn.green"
         :blue-status-column="selectedStatusColumn.blue"
+        :green-value-column-options="valueColumnOptions.green"
+        :blue-value-column-options="valueColumnOptions.blue"
+        :green-value-column="selectedValueColumn.green"
+        :blue-value-column="selectedValueColumn.blue"
         :error="validationError"
         @update:green-sheet="updateGreenSheet"
         @update:blue-sheet="updateBlueSheet"
         @update:green-status-column="updateGreenStatusColumn"
         @update:blue-status-column="updateBlueStatusColumn"
+        @update:green-value-column="updateGreenValueColumn"
+        @update:blue-value-column="updateBlueValueColumn"
       />
     </v-col>
   </v-row>
@@ -83,6 +89,15 @@
       />
     </v-col>
   </v-row>
+
+  <v-row v-if="totalCount" class="mb-10" justify="center">
+    <v-col cols="12" md="10" lg="9">
+      <dashboard-visualization
+        :green-zone="dashboardView.green"
+        :blue-zone="dashboardView.blue"
+      />
+    </v-col>
+  </v-row>
 </template>
 
 <script setup>
@@ -94,14 +109,19 @@ import ReadyStatusStep from './steps/ReadyStatusStep.vue'
 import CommentStep from './steps/CommentStep.vue'
 import GenerateStep from './steps/GenerateStep.vue'
 import ReportPreview from './ReportPreview.vue'
+import DashboardVisualization from './DashboardVisualization.vue'
 import {
   readWorkbook,
   getSheetNames,
   getSheetData,
   buildColumnMap,
   extractMetrics,
+  extractDashboardItems,
   summarizeStatuses,
   normalizeStatusKey,
+  normalizeValue,
+  isSectionType,
+  isMetricType,
 } from '../utils/excel.js'
 import { generateStatusReport } from '../utils/docx.js'
 
@@ -114,7 +134,15 @@ const statusColumnOptions = reactive({
   green: [],
   blue: [],
 })
+const valueColumnOptions = reactive({
+  green: [],
+  blue: [],
+})
 const selectedStatusColumn = reactive({
+  green: '',
+  blue: '',
+})
+const selectedValueColumn = reactive({
   green: '',
   blue: '',
 })
@@ -132,8 +160,8 @@ const comment = ref('')
 const generating = ref(false)
 
 const zoneData = reactive({
-  green: { rows: [], metrics: [], columnMap: {} },
-  blue: { rows: [], metrics: [], columnMap: {} },
+  green: { rows: [], metrics: [], items: [], columnMap: {} },
+  blue: { rows: [], metrics: [], items: [], columnMap: {} },
 })
 
 const requiredColumns = ['Тип', 'Наименование']
@@ -191,8 +219,12 @@ const handleFile = async (file) => {
   comment.value = loadStoredComment()
   statusColumnOptions.green = []
   statusColumnOptions.blue = []
+  valueColumnOptions.green = []
+  valueColumnOptions.blue = []
   selectedStatusColumn.green = ''
   selectedStatusColumn.blue = ''
+  selectedValueColumn.green = ''
+  selectedValueColumn.blue = ''
   Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
 
   if (!file) {
@@ -237,6 +269,18 @@ const updateBlueStatusColumn = (value) => {
   processSheets()
 }
 
+const updateGreenValueColumn = (value) => {
+  selectedValueColumn.green = value || ''
+  console.log('[Excel] Green value column selected:', selectedValueColumn.green)
+  processSheets()
+}
+
+const updateBlueValueColumn = (value) => {
+  selectedValueColumn.blue = value || ''
+  console.log('[Excel] Blue value column selected:', selectedValueColumn.blue)
+  processSheets()
+}
+
 const resolveActualHeader = (headerRow, selectedHeader) => {
   const normalizedSelected = selectedHeader?.toString().trim().toLowerCase()
   if (!normalizedSelected) return selectedHeader
@@ -250,6 +294,8 @@ const refreshStatusColumnOptions = () => {
   validationError.value = ''
   statusColumnOptions.green = []
   statusColumnOptions.blue = []
+  valueColumnOptions.green = []
+  valueColumnOptions.blue = []
 
   if (!sheetSelection.green || !sheetSelection.blue || !workbookRef.value) {
     return
@@ -272,8 +318,12 @@ const refreshStatusColumnOptions = () => {
 
   statusColumnOptions.green = normalizeHeaders(greenData.headerRow)
   statusColumnOptions.blue = normalizeHeaders(blueData.headerRow)
+  valueColumnOptions.green = normalizeHeaders(greenData.headerRow)
+  valueColumnOptions.blue = normalizeHeaders(blueData.headerRow)
   console.log('[Excel] Green status column options:', statusColumnOptions.green)
   console.log('[Excel] Blue status column options:', statusColumnOptions.blue)
+  console.log('[Excel] Green value column options:', valueColumnOptions.green)
+  console.log('[Excel] Blue value column options:', valueColumnOptions.blue)
 
   if (
     selectedStatusColumn.green &&
@@ -286,6 +336,19 @@ const refreshStatusColumnOptions = () => {
     !statusColumnOptions.blue.includes(selectedStatusColumn.blue)
   ) {
     selectedStatusColumn.blue = ''
+  }
+
+  if (
+    selectedValueColumn.green &&
+    !valueColumnOptions.green.includes(selectedValueColumn.green)
+  ) {
+    selectedValueColumn.green = ''
+  }
+  if (
+    selectedValueColumn.blue &&
+    !valueColumnOptions.blue.includes(selectedValueColumn.blue)
+  ) {
+    selectedValueColumn.blue = ''
   }
 
   if (!selectedStatusColumn.green) {
@@ -307,6 +370,26 @@ const refreshStatusColumnOptions = () => {
       console.log('[Excel] Blue status column auto-selected:', selectedStatusColumn.blue)
     }
   }
+
+  if (!selectedValueColumn.green) {
+    const defaultValueColumn = valueColumnOptions.green.find((column) =>
+      column.toLowerCase().includes('значение')
+    )
+    if (defaultValueColumn) {
+      selectedValueColumn.green = defaultValueColumn
+      console.log('[Excel] Green value column auto-selected:', selectedValueColumn.green)
+    }
+  }
+
+  if (!selectedValueColumn.blue) {
+    const defaultValueColumn = valueColumnOptions.blue.find((column) =>
+      column.toLowerCase().includes('значение')
+    )
+    if (defaultValueColumn) {
+      selectedValueColumn.blue = defaultValueColumn
+      console.log('[Excel] Blue value column auto-selected:', selectedValueColumn.blue)
+    }
+  }
 }
 
 const processSheets = () => {
@@ -323,6 +406,11 @@ const processSheets = () => {
 
   if (!selectedStatusColumn.green || !selectedStatusColumn.blue) {
     validationError.value = 'Выберите столбец со статусами для каждого листа.'
+    return
+  }
+
+  if (!selectedValueColumn.green || !selectedValueColumn.blue) {
+    validationError.value = 'Выберите столбец со значениями для каждого листа.'
     return
   }
 
@@ -372,8 +460,18 @@ const processSheets = () => {
     blueData.headerRow,
     selectedStatusColumn.blue
   )
+  const greenValueHeader = resolveActualHeader(
+    greenData.headerRow,
+    selectedValueColumn.green
+  )
+  const blueValueHeader = resolveActualHeader(
+    blueData.headerRow,
+    selectedValueColumn.blue
+  )
   greenColumns.map[selectedStatusColumn.green] = greenStatusHeader
   blueColumns.map[selectedStatusColumn.blue] = blueStatusHeader
+  greenColumns.map[selectedValueColumn.green] = greenValueHeader
+  blueColumns.map[selectedValueColumn.blue] = blueValueHeader
   zoneData.green.columnMap = greenColumns.map
   zoneData.blue.columnMap = blueColumns.map
 
@@ -387,9 +485,23 @@ const processSheets = () => {
     blueColumns.map,
     selectedStatusColumn.blue
   )
+  zoneData.green.items = extractDashboardItems(
+    greenData.rows,
+    greenColumns.map,
+    selectedStatusColumn.green,
+    selectedValueColumn.green
+  )
+  zoneData.blue.items = extractDashboardItems(
+    blueData.rows,
+    blueColumns.map,
+    selectedStatusColumn.blue,
+    selectedValueColumn.blue
+  )
 
   console.log('[Excel] Green metrics:', zoneData.green.metrics)
   console.log('[Excel] Blue metrics:', zoneData.blue.metrics)
+  console.log('[Excel] Green dashboard items:', zoneData.green.items)
+  console.log('[Excel] Blue dashboard items:', zoneData.blue.items)
 
   const combinedStatuses = new Map()
   zoneData.green.metrics.forEach((item) => {
@@ -479,6 +591,72 @@ const blueStatusSummary = computed(() =>
     .map(([status, count]) => `${status} (${count})`)
     .join(', ')
 )
+
+const buildZoneView = (items, readySet, useSections) => {
+  const sections = []
+  let currentSection = null
+  let currentCard = null
+
+  const ensureSection = (name = '') => {
+    const section = { name, cards: [] }
+    sections.push(section)
+    return section
+  }
+
+  items.forEach((item) => {
+    const typeNormalized = normalizeValue(item.type)
+    if (isSectionType(item.type)) {
+      if (!useSections) {
+        return
+      }
+      currentSection = ensureSection(item.name || 'Без названия раздела')
+      currentCard = null
+      return
+    }
+
+    if (!currentSection) {
+      currentSection = ensureSection(useSections ? 'Прочее' : '')
+    }
+
+    const statusNormalized = normalizeStatus(item.status)
+    const hasStatus = Boolean(statusNormalized)
+    const problem = hasStatus && !readySet.has(statusNormalized)
+
+    if (typeNormalized === 'метрика') {
+      currentCard = {
+        name: item.name || 'Без названия метрики',
+        mainValue: item.value,
+        status: item.statusDisplay || item.status || '',
+        values: [],
+        problem,
+      }
+      currentSection.cards.push(currentCard)
+      return
+    }
+
+    if (isMetricType(item.type) && typeNormalized === 'значение' && currentCard) {
+      currentCard.values.push({
+        name: item.name || 'Значение',
+        value: item.value,
+        status: item.statusDisplay || item.status || '',
+        problem,
+      })
+      if (problem) {
+        currentCard.problem = true
+      }
+    }
+  })
+
+  return { sections: sections.filter((section) => section.cards.length) }
+}
+
+const dashboardView = computed(() => {
+  const readySet = new Set(readyStatuses.value.map(normalizeStatus))
+  return {
+    green: buildZoneView(zoneData.green.items, readySet, false),
+    blue: buildZoneView(zoneData.blue.items, readySet, true),
+  }
+})
 
 const generateReport = async () => {
   generating.value = true

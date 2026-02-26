@@ -76,7 +76,7 @@
         <div class="text-subtitle-1 font-weight-bold mb-2">
           Общий комментарий
         </div>
-        <div class="text-body-2 text-medium-emphasis">
+        <div class="text-body-2 text-medium-emphasis report-comment">
           {{ comment || 'Комментарий не указан.' }}
         </div>
       </v-card>
@@ -176,5 +176,9 @@ const exportImage = async () => {
 
 .report-block td {
   color: rgba(226, 232, 240, 0.8);
+}
+
+.report-comment {
+  white-space: pre-line;
 }
 </style>

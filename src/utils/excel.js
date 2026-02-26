@@ -34,6 +34,14 @@ export const getSheetData = (workbook, sheetName) => {
 export const normalizeValue = (value) =>
   value?.toString().trim().toLowerCase()
 
+export const normalizeTextCell = (value) => value?.toString().trim() || ''
+
+export const formatDashboardNumber = (value) => {
+  const raw = value?.toString().trim() || ''
+  if (!raw) return ''
+  return raw.replace(/[^\d,]+/g, '')
+}
+
 export const splitStatusTokens = (value) => {
   if (!value) return []
   return value
@@ -87,6 +95,8 @@ export const isMetricType = (value) => {
   return normalized === 'значение' || normalized === 'метрика'
 }
 
+export const isSectionType = (value) => normalizeValue(value) === 'раздел'
+
 export const extractMetrics = (rows, columnMap, statusColumnName = 'Статус') => {
   const typeKey = columnMap['Тип']
   const nameKey = columnMap['Наименование']
@@ -95,9 +105,32 @@ export const extractMetrics = (rows, columnMap, statusColumnName = 'Статус
   return rows
     .filter((row) => isMetricType(row[typeKey]))
     .map((row) => ({
-      type: row[typeKey],
-      name: row[nameKey],
-      status: row[statusKey],
+      type: normalizeTextCell(row[typeKey]),
+      name: normalizeTextCell(row[nameKey]),
+      status: normalizeTextCell(row[statusKey]),
+      statusKey: normalizeStatusKey(row[statusKey]),
+      statusDisplay: formatStatusDisplay(row[statusKey]),
+    }))
+}
+
+export const extractDashboardItems = (
+  rows,
+  columnMap,
+  statusColumnName = 'Статус',
+  valueColumnName = ''
+) => {
+  const typeKey = columnMap['Тип']
+  const nameKey = columnMap['Наименование']
+  const statusKey = columnMap[statusColumnName]
+  const valueKey = columnMap[valueColumnName]
+
+  return rows
+    .filter((row) => isMetricType(row[typeKey]) || isSectionType(row[typeKey]))
+    .map((row) => ({
+      type: normalizeTextCell(row[typeKey]),
+      name: normalizeTextCell(row[nameKey]),
+      status: normalizeTextCell(row[statusKey]),
+      value: valueKey ? formatDashboardNumber(row[valueKey]) : '',
       statusKey: normalizeStatusKey(row[statusKey]),
       statusDisplay: formatStatusDisplay(row[statusKey]),
     }))
