@@ -17,9 +17,15 @@
         :sheet-names="sheetNames"
         :green-sheet="sheetSelection.green"
         :blue-sheet="sheetSelection.blue"
+        :green-status-column-options="statusColumnOptions.green"
+        :blue-status-column-options="statusColumnOptions.blue"
+        :green-status-column="selectedStatusColumn.green"
+        :blue-status-column="selectedStatusColumn.blue"
         :error="validationError"
         @update:green-sheet="updateGreenSheet"
         @update:blue-sheet="updateBlueSheet"
+        @update:green-status-column="updateGreenStatusColumn"
+        @update:blue-status-column="updateBlueStatusColumn"
       />
     </v-col>
   </v-row>
@@ -104,6 +110,14 @@ const emit = defineEmits(['back'])
 const fileRef = ref(null)
 const workbookRef = ref(null)
 const sheetNames = ref([])
+const statusColumnOptions = reactive({
+  green: [],
+  blue: [],
+})
+const selectedStatusColumn = reactive({
+  green: '',
+  blue: '',
+})
 
 const sheetSelection = reactive({
   green: '',
@@ -122,7 +136,48 @@ const zoneData = reactive({
   blue: { rows: [], metrics: [], columnMap: {} },
 })
 
-const requiredColumns = ['Тип', 'Наименование', 'Статус']
+const requiredColumns = ['Тип', 'Наименование']
+const STORAGE_KEYS = {
+  comment: 'dashboard_status_general_comment',
+  descriptions: 'dashboard_status_descriptions',
+}
+
+const loadStoredComment = () => {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.comment) || ''
+  } catch (error) {
+    console.warn('[Storage] Failed to load general comment:', error)
+    return ''
+  }
+}
+
+const loadStoredDescriptions = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.descriptions)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed ? parsed : {}
+  } catch (error) {
+    console.warn('[Storage] Failed to load status descriptions:', error)
+    return {}
+  }
+}
+
+const saveStoredComment = (value) => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.comment, value || '')
+  } catch (error) {
+    console.warn('[Storage] Failed to save general comment:', error)
+  }
+}
+
+const saveStoredDescriptions = () => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.descriptions, JSON.stringify(statusDescriptions))
+  } catch (error) {
+    console.warn('[Storage] Failed to save status descriptions:', error)
+  }
+}
 
 const handleFile = async (file) => {
   fileRef.value = file
@@ -133,7 +188,11 @@ const handleFile = async (file) => {
   validationError.value = ''
   statuses.value = []
   readyStatuses.value = []
-  comment.value = ''
+  comment.value = loadStoredComment()
+  statusColumnOptions.green = []
+  statusColumnOptions.blue = []
+  selectedStatusColumn.green = ''
+  selectedStatusColumn.blue = ''
   Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
 
   if (!file) {
@@ -156,18 +215,114 @@ const handleFile = async (file) => {
 
 const updateGreenSheet = (value) => {
   sheetSelection.green = value
+  refreshStatusColumnOptions()
   processSheets()
 }
 
 const updateBlueSheet = (value) => {
   sheetSelection.blue = value
+  refreshStatusColumnOptions()
   processSheets()
+}
+
+const updateGreenStatusColumn = (value) => {
+  selectedStatusColumn.green = value || ''
+  console.log('[Excel] Green status column selected:', selectedStatusColumn.green)
+  processSheets()
+}
+
+const updateBlueStatusColumn = (value) => {
+  selectedStatusColumn.blue = value || ''
+  console.log('[Excel] Blue status column selected:', selectedStatusColumn.blue)
+  processSheets()
+}
+
+const resolveActualHeader = (headerRow, selectedHeader) => {
+  const normalizedSelected = selectedHeader?.toString().trim().toLowerCase()
+  if (!normalizedSelected) return selectedHeader
+  const actual = headerRow.find(
+    (header) => header?.toString().trim().toLowerCase() === normalizedSelected
+  )
+  return actual || selectedHeader
+}
+
+const refreshStatusColumnOptions = () => {
+  validationError.value = ''
+  statusColumnOptions.green = []
+  statusColumnOptions.blue = []
+
+  if (!sheetSelection.green || !sheetSelection.blue || !workbookRef.value) {
+    return
+  }
+
+  const greenData = getSheetData(workbookRef.value, sheetSelection.green)
+  const blueData = getSheetData(workbookRef.value, sheetSelection.blue)
+
+  const normalizeHeaders = (headers) => {
+    const seen = new Set()
+    return headers
+      .map((header) => header?.toString().trim())
+      .filter((header) => {
+        const key = header?.toLowerCase()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+  }
+
+  statusColumnOptions.green = normalizeHeaders(greenData.headerRow)
+  statusColumnOptions.blue = normalizeHeaders(blueData.headerRow)
+  console.log('[Excel] Green status column options:', statusColumnOptions.green)
+  console.log('[Excel] Blue status column options:', statusColumnOptions.blue)
+
+  if (
+    selectedStatusColumn.green &&
+    !statusColumnOptions.green.includes(selectedStatusColumn.green)
+  ) {
+    selectedStatusColumn.green = ''
+  }
+  if (
+    selectedStatusColumn.blue &&
+    !statusColumnOptions.blue.includes(selectedStatusColumn.blue)
+  ) {
+    selectedStatusColumn.blue = ''
+  }
+
+  if (!selectedStatusColumn.green) {
+    const defaultColumn = statusColumnOptions.green.find(
+      (column) => column.toLowerCase() === 'статус'
+    )
+    if (defaultColumn) {
+      selectedStatusColumn.green = defaultColumn
+      console.log('[Excel] Green status column auto-selected:', selectedStatusColumn.green)
+    }
+  }
+
+  if (!selectedStatusColumn.blue) {
+    const defaultColumn = statusColumnOptions.blue.find(
+      (column) => column.toLowerCase() === 'статус'
+    )
+    if (defaultColumn) {
+      selectedStatusColumn.blue = defaultColumn
+      console.log('[Excel] Blue status column auto-selected:', selectedStatusColumn.blue)
+    }
+  }
 }
 
 const processSheets = () => {
   validationError.value = ''
 
   if (!sheetSelection.green || !sheetSelection.blue) {
+    return
+  }
+
+  if (!statusColumnOptions.green.length || !statusColumnOptions.blue.length) {
+    validationError.value = 'На одном из листов не найдены доступные столбцы для статусов.'
+    return
+  }
+
+  if (!selectedStatusColumn.green || !selectedStatusColumn.blue) {
+    validationError.value = 'Выберите столбец со статусами для каждого листа.'
     return
   }
 
@@ -209,14 +364,29 @@ const processSheets = () => {
 
   zoneData.green.rows = greenData.rows
   zoneData.blue.rows = blueData.rows
+  const greenStatusHeader = resolveActualHeader(
+    greenData.headerRow,
+    selectedStatusColumn.green
+  )
+  const blueStatusHeader = resolveActualHeader(
+    blueData.headerRow,
+    selectedStatusColumn.blue
+  )
+  greenColumns.map[selectedStatusColumn.green] = greenStatusHeader
+  blueColumns.map[selectedStatusColumn.blue] = blueStatusHeader
   zoneData.green.columnMap = greenColumns.map
   zoneData.blue.columnMap = blueColumns.map
 
   zoneData.green.metrics = extractMetrics(
     greenData.rows,
-    greenColumns.map
+    greenColumns.map,
+    selectedStatusColumn.green
   )
-  zoneData.blue.metrics = extractMetrics(blueData.rows, blueColumns.map)
+  zoneData.blue.metrics = extractMetrics(
+    blueData.rows,
+    blueColumns.map,
+    selectedStatusColumn.blue
+  )
 
   console.log('[Excel] Green metrics:', zoneData.green.metrics)
   console.log('[Excel] Blue metrics:', zoneData.blue.metrics)
@@ -234,8 +404,10 @@ const processSheets = () => {
   statuses.value = Array.from(combinedStatuses.values())
   console.log('[Excel] Unique statuses:', statuses.value)
 
+  const storedDescriptions = loadStoredDescriptions()
   if (!statuses.value.length) {
     Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
+    saveStoredDescriptions()
   }
 
   readyStatuses.value = readyStatuses.value.filter((status) =>
@@ -244,7 +416,7 @@ const processSheets = () => {
 
   statuses.value.forEach((status) => {
     if (!(status in statusDescriptions)) {
-      statusDescriptions[status] = ''
+      statusDescriptions[status] = storedDescriptions[status] || ''
     }
   })
 
@@ -253,10 +425,13 @@ const processSheets = () => {
       delete statusDescriptions[status]
     }
   })
+
+  saveStoredDescriptions()
 }
 
 const updateDescription = ({ status, value }) => {
   statusDescriptions[status] = value
+  saveStoredDescriptions()
 }
 
 const updateReadyStatuses = (value) => {
@@ -266,6 +441,7 @@ const updateReadyStatuses = (value) => {
 
 const updateComment = (value) => {
   comment.value = value
+  saveStoredComment(value)
 }
 
 const normalizeStatus = (status) => normalizeStatusKey(status) || ''
@@ -342,4 +518,6 @@ watch(sheetNames, (value) => {
     statuses.value = []
   }
 })
+
+comment.value = loadStoredComment()
 </script>

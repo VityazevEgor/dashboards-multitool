@@ -87,10 +87,10 @@ export const isMetricType = (value) => {
   return normalized === 'значение' || normalized === 'метрика'
 }
 
-export const extractMetrics = (rows, columnMap) => {
+export const extractMetrics = (rows, columnMap, statusColumnName = 'Статус') => {
   const typeKey = columnMap['Тип']
   const nameKey = columnMap['Наименование']
-  const statusKey = columnMap['Статус']
+  const statusKey = columnMap[statusColumnName]
 
   return rows
     .filter((row) => isMetricType(row[typeKey]))

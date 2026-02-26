@@ -29,6 +29,37 @@
       </v-col>
     </v-row>
 
+    <v-row class="mt-1">
+      <v-col cols="12" md="6">
+        <v-autocomplete
+          :items="greenStatusColumnOptions"
+          label="Столбец статуса (зеленая зона)"
+          variant="outlined"
+          color="primary"
+          :model-value="greenStatusColumn"
+          :disabled="!greenStatusColumnOptions.length"
+          clearable
+          hint="Можно искать по названию столбца"
+          persistent-hint
+          @update:model-value="updateGreenStatusColumn"
+        />
+      </v-col>
+      <v-col cols="12" md="6">
+        <v-autocomplete
+          :items="blueStatusColumnOptions"
+          label="Столбец статуса (синяя зона)"
+          variant="outlined"
+          color="primary"
+          :model-value="blueStatusColumn"
+          :disabled="!blueStatusColumnOptions.length"
+          clearable
+          hint="Можно искать по названию столбца"
+          persistent-hint
+          @update:model-value="updateBlueStatusColumn"
+        />
+      </v-col>
+    </v-row>
+
     <v-alert
       v-if="error"
       type="error"
@@ -54,14 +85,37 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  greenStatusColumnOptions: {
+    type: Array,
+    default: () => [],
+  },
+  blueStatusColumnOptions: {
+    type: Array,
+    default: () => [],
+  },
+  greenStatusColumn: {
+    type: String,
+    default: '',
+  },
+  blueStatusColumn: {
+    type: String,
+    default: '',
+  },
   error: {
     type: String,
     default: '',
   },
 })
 
-const emit = defineEmits(['update:greenSheet', 'update:blueSheet'])
+const emit = defineEmits([
+  'update:greenSheet',
+  'update:blueSheet',
+  'update:greenStatusColumn',
+  'update:blueStatusColumn',
+])
 
 const updateGreen = (value) => emit('update:greenSheet', value)
 const updateBlue = (value) => emit('update:blueSheet', value)
+const updateGreenStatusColumn = (value) => emit('update:greenStatusColumn', value)
+const updateBlueStatusColumn = (value) => emit('update:blueStatusColumn', value)
 </script>
