@@ -41,7 +41,9 @@
       <status-describe-step
         :statuses="statuses"
         :descriptions="statusDescriptions"
+        :colors="statusColors"
         @update:description="updateDescription"
+        @update:color="updateColor"
       />
     </v-col>
   </v-row>
@@ -95,6 +97,7 @@
       <dashboard-visualization
         :green-zone="dashboardView.green"
         :blue-zone="dashboardView.blue"
+        :status-colors="statusColors"
       />
     </v-col>
   </v-row>
@@ -129,6 +132,7 @@ const emit = defineEmits(['back'])
 
 const fileRef = ref(null)
 const workbookRef = ref(null)
+const fileStorageKey = ref('')
 const sheetNames = ref([])
 const statusColumnOptions = reactive({
   green: [],
@@ -155,6 +159,8 @@ const sheetSelection = reactive({
 const validationError = ref('')
 const statuses = ref([])
 const statusDescriptions = reactive({})
+const statusColors = reactive({})
+const statusColorOverrides = reactive({})
 const readyStatuses = ref([])
 const comment = ref('')
 const generating = ref(false)
@@ -168,6 +174,8 @@ const requiredColumns = ['Тип', 'Наименование']
 const STORAGE_KEYS = {
   comment: 'dashboard_status_general_comment',
   descriptions: 'dashboard_status_descriptions',
+  colors: 'dashboard_status_colors',
+  selectionsPrefix: 'dashboard_status_file_selections',
 }
 
 const loadStoredComment = () => {
@@ -207,9 +215,92 @@ const saveStoredDescriptions = () => {
   }
 }
 
+const loadStoredColors = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.colors)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed ? parsed : {}
+  } catch (error) {
+    console.warn('[Storage] Failed to load status colors:', error)
+    return {}
+  }
+}
+
+const saveStoredColors = () => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.colors, JSON.stringify(statusColorOverrides))
+  } catch (error) {
+    console.warn('[Storage] Failed to save status colors:', error)
+  }
+}
+
+const getDefaultStatusColor = (status) =>
+  readyStatuses.value.includes(status) ? '#10b981' : '#ef4444'
+
+const syncStatusColors = () => {
+  statuses.value.forEach((status) => {
+    statusColors[status] = statusColorOverrides[status] || getDefaultStatusColor(status)
+  })
+
+  Object.keys(statusColors).forEach((status) => {
+    if (!statuses.value.includes(status)) {
+      delete statusColors[status]
+    }
+  })
+  Object.keys(statusColorOverrides).forEach((status) => {
+    if (!statuses.value.includes(status)) {
+      delete statusColorOverrides[status]
+    }
+  })
+}
+
+const buildFileStorageKey = (file) => {
+  if (!file) return ''
+  return [
+    STORAGE_KEYS.selectionsPrefix,
+    file.name || 'unknown',
+    file.size || 0,
+    file.lastModified || 0,
+  ].join(':')
+}
+
+const loadStoredSelections = () => {
+  if (!fileStorageKey.value) return null
+  try {
+    const raw = localStorage.getItem(fileStorageKey.value)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'object' && parsed ? parsed : null
+  } catch (error) {
+    console.warn('[Storage] Failed to load file selections:', error)
+    return null
+  }
+}
+
+const saveStoredSelections = () => {
+  if (!fileStorageKey.value) return
+  try {
+    localStorage.setItem(
+      fileStorageKey.value,
+      JSON.stringify({
+        greenSheet: sheetSelection.green,
+        blueSheet: sheetSelection.blue,
+        greenStatusColumn: selectedStatusColumn.green,
+        blueStatusColumn: selectedStatusColumn.blue,
+        greenValueColumn: selectedValueColumn.green,
+        blueValueColumn: selectedValueColumn.blue,
+      })
+    )
+  } catch (error) {
+    console.warn('[Storage] Failed to save file selections:', error)
+  }
+}
+
 const handleFile = async (file) => {
   fileRef.value = file
   workbookRef.value = null
+  fileStorageKey.value = buildFileStorageKey(file)
   sheetNames.value = []
   sheetSelection.green = ''
   sheetSelection.blue = ''
@@ -226,6 +317,8 @@ const handleFile = async (file) => {
   selectedValueColumn.green = ''
   selectedValueColumn.blue = ''
   Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
+  Object.keys(statusColors).forEach((key) => delete statusColors[key])
+  Object.keys(statusColorOverrides).forEach((key) => delete statusColorOverrides[key])
 
   if (!file) {
     console.log('[Excel] File cleared')
@@ -239,6 +332,18 @@ const handleFile = async (file) => {
     workbookRef.value = workbook
     sheetNames.value = getSheetNames(workbook)
     console.log('[Excel] Workbook loaded. Sheets:', sheetNames.value)
+    const storedSelections = loadStoredSelections()
+    if (storedSelections) {
+      sheetSelection.green = storedSelections.greenSheet || ''
+      sheetSelection.blue = storedSelections.blueSheet || ''
+      selectedStatusColumn.green = storedSelections.greenStatusColumn || ''
+      selectedStatusColumn.blue = storedSelections.blueStatusColumn || ''
+      selectedValueColumn.green = storedSelections.greenValueColumn || ''
+      selectedValueColumn.blue = storedSelections.blueValueColumn || ''
+      console.log('[Storage] Restored file selections:', storedSelections)
+      refreshStatusColumnOptions()
+      processSheets()
+    }
   } catch (error) {
     console.error('[Excel] Failed to read workbook:', error)
     validationError.value = 'Не удалось прочитать Excel файл. Проверьте формат.'
@@ -248,36 +353,42 @@ const handleFile = async (file) => {
 const updateGreenSheet = (value) => {
   sheetSelection.green = value
   refreshStatusColumnOptions()
+  saveStoredSelections()
   processSheets()
 }
 
 const updateBlueSheet = (value) => {
   sheetSelection.blue = value
   refreshStatusColumnOptions()
+  saveStoredSelections()
   processSheets()
 }
 
 const updateGreenStatusColumn = (value) => {
   selectedStatusColumn.green = value || ''
   console.log('[Excel] Green status column selected:', selectedStatusColumn.green)
+  saveStoredSelections()
   processSheets()
 }
 
 const updateBlueStatusColumn = (value) => {
   selectedStatusColumn.blue = value || ''
   console.log('[Excel] Blue status column selected:', selectedStatusColumn.blue)
+  saveStoredSelections()
   processSheets()
 }
 
 const updateGreenValueColumn = (value) => {
   selectedValueColumn.green = value || ''
   console.log('[Excel] Green value column selected:', selectedValueColumn.green)
+  saveStoredSelections()
   processSheets()
 }
 
 const updateBlueValueColumn = (value) => {
   selectedValueColumn.blue = value || ''
   console.log('[Excel] Blue value column selected:', selectedValueColumn.blue)
+  saveStoredSelections()
   processSheets()
 }
 
@@ -390,6 +501,8 @@ const refreshStatusColumnOptions = () => {
       console.log('[Excel] Blue value column auto-selected:', selectedValueColumn.blue)
     }
   }
+
+  saveStoredSelections()
 }
 
 const processSheets = () => {
@@ -498,10 +611,22 @@ const processSheets = () => {
     selectedValueColumn.blue
   )
 
-  console.log('[Excel] Green metrics:', zoneData.green.metrics)
-  console.log('[Excel] Blue metrics:', zoneData.blue.metrics)
-  console.log('[Excel] Green dashboard items:', zoneData.green.items)
-  console.log('[Excel] Blue dashboard items:', zoneData.blue.items)
+  console.log('[Excel] Green metrics summary:', {
+    count: zoneData.green.metrics.length,
+    sample: zoneData.green.metrics.slice(0, 5),
+  })
+  console.log('[Excel] Blue metrics summary:', {
+    count: zoneData.blue.metrics.length,
+    sample: zoneData.blue.metrics.slice(0, 5),
+  })
+  console.log('[Excel] Green dashboard items summary:', {
+    count: zoneData.green.items.length,
+    sample: zoneData.green.items.slice(0, 5),
+  })
+  console.log('[Excel] Blue dashboard items summary:', {
+    count: zoneData.blue.items.length,
+    sample: zoneData.blue.items.slice(0, 5),
+  })
 
   const combinedStatuses = new Map()
   zoneData.green.metrics.forEach((item) => {
@@ -517,9 +642,12 @@ const processSheets = () => {
   console.log('[Excel] Unique statuses:', statuses.value)
 
   const storedDescriptions = loadStoredDescriptions()
+  const storedColors = loadStoredColors()
   if (!statuses.value.length) {
     Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
+    Object.keys(statusColors).forEach((key) => delete statusColors[key])
     saveStoredDescriptions()
+    saveStoredColors()
   }
 
   readyStatuses.value = readyStatuses.value.filter((status) =>
@@ -530,6 +658,9 @@ const processSheets = () => {
     if (!(status in statusDescriptions)) {
       statusDescriptions[status] = storedDescriptions[status] || ''
     }
+    if (!(status in statusColorOverrides) && storedColors[status]) {
+      statusColorOverrides[status] = storedColors[status]
+    }
   })
 
   Object.keys(statusDescriptions).forEach((status) => {
@@ -537,8 +668,9 @@ const processSheets = () => {
       delete statusDescriptions[status]
     }
   })
-
+  syncStatusColors()
   saveStoredDescriptions()
+  saveStoredColors()
 }
 
 const updateDescription = ({ status, value }) => {
@@ -546,9 +678,16 @@ const updateDescription = ({ status, value }) => {
   saveStoredDescriptions()
 }
 
+const updateColor = ({ status, value }) => {
+  statusColorOverrides[status] = value
+  statusColors[status] = value
+  saveStoredColors()
+}
+
 const updateReadyStatuses = (value) => {
   readyStatuses.value = value
   console.log('[Status] Ready statuses updated:', readyStatuses.value)
+  syncStatusColors()
 }
 
 const updateComment = (value) => {
@@ -641,9 +780,6 @@ const buildZoneView = (items, readySet, useSections) => {
         status: item.statusDisplay || item.status || '',
         problem,
       })
-      if (problem) {
-        currentCard.problem = true
-      }
     }
   })
 
