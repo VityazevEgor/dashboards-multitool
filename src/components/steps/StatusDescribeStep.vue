@@ -13,7 +13,7 @@
         cols="12"
         md="6"
       >
-        <div class="d-flex align-start ga-3">
+        <div class="d-flex align-start ga-3 status-row">
           <v-text-field
             class="flex-grow-1"
             :label="status"
@@ -22,15 +22,33 @@
             :model-value="descriptions[status]"
             @update:model-value="(value) => updateDescription(status, value)"
           />
-          <div class="color-field">
-            <label class="color-label">Цвет</label>
-            <input
-              class="color-input"
-              type="color"
-              :value="colors[status] || '#10b981'"
-              @input="(event) => updateColor(status, event.target.value)"
-            />
-          </div>
+          <v-menu location="bottom end" :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <v-btn
+                v-bind="menuProps"
+                class="color-trigger"
+                icon
+                variant="tonal"
+                :style="{ color: colors[status] || '#10b981' }"
+              >
+                <v-icon icon="mdi-palette" />
+              </v-btn>
+            </template>
+
+            <v-card class="pa-2" width="320">
+              <div class="text-caption text-medium-emphasis mb-2">
+                Цвет для статуса: {{ status }}
+              </div>
+              <v-color-picker
+                :model-value="colors[status] || '#10b981'"
+                mode="hex"
+                :modes="['hex']"
+                hide-inputs
+                show-swatches
+                @update:model-value="(value) => updateColor(status, value)"
+              />
+            </v-card>
+          </v-menu>
         </div>
       </v-col>
     </v-row>
@@ -65,24 +83,11 @@ const updateColor = (status, value) => {
 </script>
 
 <style scoped>
-.color-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 64px;
+.status-row {
+  min-height: 56px;
 }
 
-.color-label {
-  font-size: 12px;
-  color: rgba(148, 163, 184, 0.9);
-}
-
-.color-input {
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
+.color-trigger {
+  margin-top: 6px;
 }
 </style>
