@@ -11,6 +11,61 @@
     </v-col>
   </v-row>
 
+  <v-row v-if="fileRef" class="mb-6" justify="center">
+    <v-col cols="12" md="10" lg="9">
+      <v-card class="pa-6" color="surface" elevation="6">
+        <div class="text-overline text-primary mb-2">Шаблоны</div>
+        <div class="text-body-2 text-medium-emphasis mb-4">
+          Выберите готовый шаблон, создайте новый или перезапишите текущий.
+        </div>
+        <v-row>
+          <v-col cols="12">
+            <div class="d-flex align-start ga-2">
+            <v-select
+              class="flex-grow-1"
+              v-model="selectedTemplateName"
+              :items="templateNames"
+              label="Шаблон"
+              variant="outlined"
+              clearable
+            />
+              <v-btn
+                class="template-btn"
+                color="secondary"
+                variant="text"
+                prepend-icon="mdi-plus-box-outline"
+                @click="openCreateTemplateDialog"
+              >
+                Новый
+              </v-btn>
+            </div>
+            <div class="d-flex ga-2 mt-2">
+              <v-btn
+                class="template-btn"
+                color="primary"
+                variant="flat"
+                prepend-icon="mdi-check-circle-outline"
+                :disabled="!selectedTemplateName"
+                @click="applyTemplate"
+              >
+                Применить
+              </v-btn>
+              <v-btn
+                class="template-btn"
+                color="secondary"
+                variant="outlined"
+                prepend-icon="mdi-content-save-outline"
+                @click="saveTemplate"
+              >
+                Сохранить
+              </v-btn>
+            </div>
+          </v-col>
+        </v-row>
+      </v-card>
+    </v-col>
+  </v-row>
+
   <v-row v-if="sheetNames.length" class="mb-6" justify="center">
     <v-col cols="12" md="10" lg="9">
       <sheet-select-step
@@ -98,9 +153,38 @@
         :green-zone="dashboardView.green"
         :blue-zone="dashboardView.blue"
         :status-colors="statusColors"
+        :theme-mode="visualSettings.themeMode"
+        :dim-uncommented="visualSettings.dimUncommented"
+        :prepared-comments-text="visualSettings.preparedCommentsText"
+        :card-comments="metricComments"
+        @update:theme-mode="(value) => (visualSettings.themeMode = value)"
+        @update:dim-uncommented="(value) => (visualSettings.dimUncommented = value)"
+        @update:prepared-comments-text="(value) => (visualSettings.preparedCommentsText = value)"
+        @set-card-comment="setCardComment"
+        @remove-card-comment="removeCardComment"
       />
     </v-col>
   </v-row>
+
+  <v-dialog v-model="createTemplateDialog" max-width="460">
+    <v-card>
+      <v-card-title class="text-subtitle-1 font-weight-bold">Новый шаблон</v-card-title>
+      <v-card-text>
+        <v-text-field
+          v-model="newTemplateName"
+          label="Название шаблона"
+          variant="outlined"
+          autofocus
+          @keyup.enter="confirmCreateTemplate"
+        />
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="createTemplateDialog = false">Отмена</v-btn>
+        <v-btn color="primary" variant="flat" @click="confirmCreateTemplate">Сохранить</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup>
@@ -127,43 +211,43 @@ import {
   isMetricType,
 } from '../utils/excel.js'
 import { generateStatusReport } from '../utils/docx.js'
+import { StatusTemplate, StatusTemplateStore } from '../models/statusTemplate.js'
 
 const emit = defineEmits(['back'])
 
+const templateStore = new StatusTemplateStore()
+
 const fileRef = ref(null)
 const workbookRef = ref(null)
-const fileStorageKey = ref('')
 const sheetNames = ref([])
-const statusColumnOptions = reactive({
-  green: [],
-  blue: [],
-})
-const valueColumnOptions = reactive({
-  green: [],
-  blue: [],
-})
-const selectedStatusColumn = reactive({
-  green: '',
-  blue: '',
-})
-const selectedValueColumn = reactive({
-  green: '',
-  blue: '',
-})
 
-const sheetSelection = reactive({
-  green: '',
-  blue: '',
-})
+const templates = ref([])
+const selectedTemplateName = ref('')
+const createTemplateDialog = ref(false)
+const newTemplateName = ref('')
+
+const statusColumnOptions = reactive({ green: [], blue: [] })
+const valueColumnOptions = reactive({ green: [], blue: [] })
+const selectedStatusColumn = reactive({ green: '', blue: '' })
+const selectedValueColumn = reactive({ green: '', blue: '' })
+const sheetSelection = reactive({ green: '', blue: '' })
 
 const validationError = ref('')
 const statuses = ref([])
 const statusDescriptions = reactive({})
+const statusDescriptionsStore = reactive({})
 const statusColors = reactive({})
 const statusColorOverrides = reactive({})
 const readyStatuses = ref([])
 const comment = ref('')
 const generating = ref(false)
+
+const metricComments = reactive({})
+const visualSettings = reactive({
+  themeMode: 'dark',
+  dimUncommented: false,
+  preparedCommentsText: '',
+})
 
 const zoneData = reactive({
   green: { rows: [], metrics: [], items: [], columnMap: {} },
@@ -171,154 +255,135 @@ const zoneData = reactive({
 })
 
 const requiredColumns = ['Тип', 'Наименование']
-const STORAGE_KEYS = {
-  comment: 'dashboard_status_general_comment',
-  descriptions: 'dashboard_status_descriptions',
-  colors: 'dashboard_status_colors',
-  selectionsPrefix: 'dashboard_status_file_selections',
-}
 
-const loadStoredComment = () => {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.comment) || ''
-  } catch (error) {
-    console.warn('[Storage] Failed to load general comment:', error)
-    return ''
-  }
-}
-
-const loadStoredDescriptions = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.descriptions)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed ? parsed : {}
-  } catch (error) {
-    console.warn('[Storage] Failed to load status descriptions:', error)
-    return {}
-  }
-}
-
-const saveStoredComment = (value) => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.comment, value || '')
-  } catch (error) {
-    console.warn('[Storage] Failed to save general comment:', error)
-  }
-}
-
-const saveStoredDescriptions = () => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.descriptions, JSON.stringify(statusDescriptions))
-  } catch (error) {
-    console.warn('[Storage] Failed to save status descriptions:', error)
-  }
-}
-
-const loadStoredColors = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.colors)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed ? parsed : {}
-  } catch (error) {
-    console.warn('[Storage] Failed to load status colors:', error)
-    return {}
-  }
-}
-
-const saveStoredColors = () => {
-  try {
-    localStorage.setItem(STORAGE_KEYS.colors, JSON.stringify(statusColorOverrides))
-  } catch (error) {
-    console.warn('[Storage] Failed to save status colors:', error)
-  }
-}
+const templateNames = computed(() => templates.value.map((template) => template.name))
 
 const getDefaultStatusColor = (status) =>
   readyStatuses.value.includes(status) ? '#10b981' : '#ef4444'
 
-const syncStatusColors = () => {
+const refreshTemplateList = () => {
+  templates.value = templateStore.loadAll()
+}
+
+const clearObject = (target) => {
+  Object.keys(target).forEach((key) => delete target[key])
+}
+
+const normalizeHeaders = (headers) => {
+  const seen = new Set()
+  return headers
+    .map((header) => header?.toString().trim())
+    .filter((header) => {
+      const key = header?.toLowerCase()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
+const resolveActualHeader = (headerRow, selectedHeader) => {
+  const normalizedSelected = selectedHeader?.toString().trim().toLowerCase()
+  if (!normalizedSelected) return selectedHeader
+  const actual = headerRow.find(
+    (header) => header?.toString().trim().toLowerCase() === normalizedSelected
+  )
+  return actual || selectedHeader
+}
+
+const syncCurrentStatusFields = () => {
   statuses.value.forEach((status) => {
+    statusDescriptions[status] = statusDescriptionsStore[status] || ''
     statusColors[status] = statusColorOverrides[status] || getDefaultStatusColor(status)
   })
 
+  Object.keys(statusDescriptions).forEach((status) => {
+    if (!statuses.value.includes(status)) {
+      delete statusDescriptions[status]
+    }
+  })
   Object.keys(statusColors).forEach((status) => {
     if (!statuses.value.includes(status)) {
       delete statusColors[status]
     }
   })
-  Object.keys(statusColorOverrides).forEach((status) => {
-    if (!statuses.value.includes(status)) {
-      delete statusColorOverrides[status]
-    }
+}
+
+const applyTemplatePayload = (template) => {
+  sheetSelection.green = template.sheets?.green || ''
+  sheetSelection.blue = template.sheets?.blue || ''
+  selectedStatusColumn.green = template.statusColumns?.green || ''
+  selectedStatusColumn.blue = template.statusColumns?.blue || ''
+  selectedValueColumn.green = template.valueColumns?.green || ''
+  selectedValueColumn.blue = template.valueColumns?.blue || ''
+
+  clearObject(statusDescriptionsStore)
+  Object.assign(statusDescriptionsStore, template.statusDescriptions || {})
+
+  clearObject(statusColorOverrides)
+  Object.assign(statusColorOverrides, template.statusColorOverrides || {})
+
+  readyStatuses.value = [...(template.readyStatuses || [])]
+  comment.value = template.generalComment || ''
+
+  clearObject(metricComments)
+  Object.assign(metricComments, template.metricComments || {})
+
+  visualSettings.themeMode = template.visualTheme || 'dark'
+  visualSettings.dimUncommented = Boolean(template.dimUncommented)
+  visualSettings.preparedCommentsText = template.preparedCommentsText || ''
+
+  refreshStatusColumnOptions()
+  processSheets()
+}
+
+const buildTemplateFromCurrentState = (name) =>
+  StatusTemplate.fromState(name, {
+    sheets: { ...sheetSelection },
+    statusColumns: { ...selectedStatusColumn },
+    valueColumns: { ...selectedValueColumn },
+    statusDescriptions: { ...statusDescriptionsStore },
+    statusColorOverrides: { ...statusColorOverrides },
+    readyStatuses: [...readyStatuses.value],
+    generalComment: comment.value,
+    metricComments: { ...metricComments },
+    preparedCommentsText: visualSettings.preparedCommentsText,
+    dimUncommented: visualSettings.dimUncommented,
+    visualTheme: visualSettings.themeMode,
   })
-}
-
-const buildFileStorageKey = (file) => {
-  if (!file) return ''
-  return [
-    STORAGE_KEYS.selectionsPrefix,
-    file.name || 'unknown',
-    file.size || 0,
-    file.lastModified || 0,
-  ].join(':')
-}
-
-const loadStoredSelections = () => {
-  if (!fileStorageKey.value) return null
-  try {
-    const raw = localStorage.getItem(fileStorageKey.value)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return typeof parsed === 'object' && parsed ? parsed : null
-  } catch (error) {
-    console.warn('[Storage] Failed to load file selections:', error)
-    return null
-  }
-}
-
-const saveStoredSelections = () => {
-  if (!fileStorageKey.value) return
-  try {
-    localStorage.setItem(
-      fileStorageKey.value,
-      JSON.stringify({
-        greenSheet: sheetSelection.green,
-        blueSheet: sheetSelection.blue,
-        greenStatusColumn: selectedStatusColumn.green,
-        blueStatusColumn: selectedStatusColumn.blue,
-        greenValueColumn: selectedValueColumn.green,
-        blueValueColumn: selectedValueColumn.blue,
-      })
-    )
-  } catch (error) {
-    console.warn('[Storage] Failed to save file selections:', error)
-  }
-}
 
 const handleFile = async (file) => {
   fileRef.value = file
   workbookRef.value = null
-  fileStorageKey.value = buildFileStorageKey(file)
   sheetNames.value = []
+  validationError.value = ''
+
   sheetSelection.green = ''
   sheetSelection.blue = ''
-  validationError.value = ''
-  statuses.value = []
-  readyStatuses.value = []
-  comment.value = loadStoredComment()
-  statusColumnOptions.green = []
-  statusColumnOptions.blue = []
-  valueColumnOptions.green = []
-  valueColumnOptions.blue = []
   selectedStatusColumn.green = ''
   selectedStatusColumn.blue = ''
   selectedValueColumn.green = ''
   selectedValueColumn.blue = ''
-  Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
-  Object.keys(statusColors).forEach((key) => delete statusColors[key])
-  Object.keys(statusColorOverrides).forEach((key) => delete statusColorOverrides[key])
+
+  statusColumnOptions.green = []
+  statusColumnOptions.blue = []
+  valueColumnOptions.green = []
+  valueColumnOptions.blue = []
+
+  statuses.value = []
+  readyStatuses.value = []
+  comment.value = ''
+
+  clearObject(statusDescriptions)
+  clearObject(statusDescriptionsStore)
+  clearObject(statusColors)
+  clearObject(statusColorOverrides)
+  clearObject(metricComments)
+
+  visualSettings.themeMode = 'dark'
+  visualSettings.dimUncommented = false
+  visualSettings.preparedCommentsText = ''
+
+  selectedTemplateName.value = ''
 
   if (!file) {
     console.log('[Excel] File cleared')
@@ -332,73 +397,75 @@ const handleFile = async (file) => {
     workbookRef.value = workbook
     sheetNames.value = getSheetNames(workbook)
     console.log('[Excel] Workbook loaded. Sheets:', sheetNames.value)
-    const storedSelections = loadStoredSelections()
-    if (storedSelections) {
-      sheetSelection.green = storedSelections.greenSheet || ''
-      sheetSelection.blue = storedSelections.blueSheet || ''
-      selectedStatusColumn.green = storedSelections.greenStatusColumn || ''
-      selectedStatusColumn.blue = storedSelections.blueStatusColumn || ''
-      selectedValueColumn.green = storedSelections.greenValueColumn || ''
-      selectedValueColumn.blue = storedSelections.blueValueColumn || ''
-      console.log('[Storage] Restored file selections:', storedSelections)
-      refreshStatusColumnOptions()
-      processSheets()
-    }
+    refreshTemplateList()
   } catch (error) {
     console.error('[Excel] Failed to read workbook:', error)
     validationError.value = 'Не удалось прочитать Excel файл. Проверьте формат.'
   }
 }
 
+const openCreateTemplateDialog = () => {
+  newTemplateName.value = ''
+  createTemplateDialog.value = true
+}
+
+const confirmCreateTemplate = () => {
+  const name = newTemplateName.value.trim()
+  if (!name) return
+  const template = buildTemplateFromCurrentState(name)
+  templates.value = templateStore.upsert(template)
+  selectedTemplateName.value = name
+  createTemplateDialog.value = false
+  console.log('[Template] Created:', name)
+}
+
+const saveTemplate = () => {
+  if (selectedTemplateName.value) {
+    const template = buildTemplateFromCurrentState(selectedTemplateName.value)
+    templates.value = templateStore.upsert(template)
+    console.log('[Template] Saved:', selectedTemplateName.value)
+    return
+  }
+  openCreateTemplateDialog()
+}
+
+const applyTemplate = () => {
+  const template = templates.value.find((item) => item.name === selectedTemplateName.value)
+  if (!template) return
+  console.log('[Template] Applying:', template.name)
+  applyTemplatePayload(template)
+}
+
 const updateGreenSheet = (value) => {
   sheetSelection.green = value
   refreshStatusColumnOptions()
-  saveStoredSelections()
   processSheets()
 }
 
 const updateBlueSheet = (value) => {
   sheetSelection.blue = value
   refreshStatusColumnOptions()
-  saveStoredSelections()
   processSheets()
 }
 
 const updateGreenStatusColumn = (value) => {
   selectedStatusColumn.green = value || ''
-  console.log('[Excel] Green status column selected:', selectedStatusColumn.green)
-  saveStoredSelections()
   processSheets()
 }
 
 const updateBlueStatusColumn = (value) => {
   selectedStatusColumn.blue = value || ''
-  console.log('[Excel] Blue status column selected:', selectedStatusColumn.blue)
-  saveStoredSelections()
   processSheets()
 }
 
 const updateGreenValueColumn = (value) => {
   selectedValueColumn.green = value || ''
-  console.log('[Excel] Green value column selected:', selectedValueColumn.green)
-  saveStoredSelections()
   processSheets()
 }
 
 const updateBlueValueColumn = (value) => {
   selectedValueColumn.blue = value || ''
-  console.log('[Excel] Blue value column selected:', selectedValueColumn.blue)
-  saveStoredSelections()
   processSheets()
-}
-
-const resolveActualHeader = (headerRow, selectedHeader) => {
-  const normalizedSelected = selectedHeader?.toString().trim().toLowerCase()
-  if (!normalizedSelected) return selectedHeader
-  const actual = headerRow.find(
-    (header) => header?.toString().trim().toLowerCase() === normalizedSelected
-  )
-  return actual || selectedHeader
 }
 
 const refreshStatusColumnOptions = () => {
@@ -415,26 +482,10 @@ const refreshStatusColumnOptions = () => {
   const greenData = getSheetData(workbookRef.value, sheetSelection.green)
   const blueData = getSheetData(workbookRef.value, sheetSelection.blue)
 
-  const normalizeHeaders = (headers) => {
-    const seen = new Set()
-    return headers
-      .map((header) => header?.toString().trim())
-      .filter((header) => {
-        const key = header?.toLowerCase()
-        if (!key || seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-  }
-
   statusColumnOptions.green = normalizeHeaders(greenData.headerRow)
   statusColumnOptions.blue = normalizeHeaders(blueData.headerRow)
   valueColumnOptions.green = normalizeHeaders(greenData.headerRow)
   valueColumnOptions.blue = normalizeHeaders(blueData.headerRow)
-  console.log('[Excel] Green status column options:', statusColumnOptions.green)
-  console.log('[Excel] Blue status column options:', statusColumnOptions.blue)
-  console.log('[Excel] Green value column options:', valueColumnOptions.green)
-  console.log('[Excel] Blue value column options:', valueColumnOptions.blue)
 
   if (
     selectedStatusColumn.green &&
@@ -448,7 +499,6 @@ const refreshStatusColumnOptions = () => {
   ) {
     selectedStatusColumn.blue = ''
   }
-
   if (
     selectedValueColumn.green &&
     !valueColumnOptions.green.includes(selectedValueColumn.green)
@@ -466,56 +516,32 @@ const refreshStatusColumnOptions = () => {
     const defaultColumn = statusColumnOptions.green.find(
       (column) => column.toLowerCase() === 'статус'
     )
-    if (defaultColumn) {
-      selectedStatusColumn.green = defaultColumn
-      console.log('[Excel] Green status column auto-selected:', selectedStatusColumn.green)
-    }
+    if (defaultColumn) selectedStatusColumn.green = defaultColumn
   }
-
   if (!selectedStatusColumn.blue) {
     const defaultColumn = statusColumnOptions.blue.find(
       (column) => column.toLowerCase() === 'статус'
     )
-    if (defaultColumn) {
-      selectedStatusColumn.blue = defaultColumn
-      console.log('[Excel] Blue status column auto-selected:', selectedStatusColumn.blue)
-    }
+    if (defaultColumn) selectedStatusColumn.blue = defaultColumn
   }
-
   if (!selectedValueColumn.green) {
-    const defaultValueColumn = valueColumnOptions.green.find((column) =>
+    const defaultColumn = valueColumnOptions.green.find((column) =>
       column.toLowerCase().includes('значение')
     )
-    if (defaultValueColumn) {
-      selectedValueColumn.green = defaultValueColumn
-      console.log('[Excel] Green value column auto-selected:', selectedValueColumn.green)
-    }
+    if (defaultColumn) selectedValueColumn.green = defaultColumn
   }
-
   if (!selectedValueColumn.blue) {
-    const defaultValueColumn = valueColumnOptions.blue.find((column) =>
+    const defaultColumn = valueColumnOptions.blue.find((column) =>
       column.toLowerCase().includes('значение')
     )
-    if (defaultValueColumn) {
-      selectedValueColumn.blue = defaultValueColumn
-      console.log('[Excel] Blue value column auto-selected:', selectedValueColumn.blue)
-    }
+    if (defaultColumn) selectedValueColumn.blue = defaultColumn
   }
-
-  saveStoredSelections()
 }
 
 const processSheets = () => {
   validationError.value = ''
 
-  if (!sheetSelection.green || !sheetSelection.blue) {
-    return
-  }
-
-  if (!statusColumnOptions.green.length || !statusColumnOptions.blue.length) {
-    validationError.value = 'На одном из листов не найдены доступные столбцы для статусов.'
-    return
-  }
+  if (!sheetSelection.green || !sheetSelection.blue) return
 
   if (!selectedStatusColumn.green || !selectedStatusColumn.blue) {
     validationError.value = 'Выберите столбец со статусами для каждого листа.'
@@ -527,77 +553,56 @@ const processSheets = () => {
     return
   }
 
-  console.log('[Excel] Selected sheets:', {
-    green: sheetSelection.green,
-    blue: sheetSelection.blue,
-  })
-
   const greenData = getSheetData(workbookRef.value, sheetSelection.green)
   const blueData = getSheetData(workbookRef.value, sheetSelection.blue)
 
   const greenColumns = buildColumnMap(greenData.headerRow, requiredColumns)
   const blueColumns = buildColumnMap(blueData.headerRow, requiredColumns)
 
-  console.log('[Excel] Green columns map:', greenColumns.map)
-  console.log('[Excel] Blue columns map:', blueColumns.map)
-
   if (greenColumns.missing.length || blueColumns.missing.length) {
     const messages = []
     if (greenColumns.missing.length) {
-      messages.push(
-        `Зеленая зона: отсутствуют столбцы ${greenColumns.missing.join(', ')}`
-      )
+      messages.push(`Зеленая зона: отсутствуют столбцы ${greenColumns.missing.join(', ')}`)
     }
     if (blueColumns.missing.length) {
-      messages.push(
-        `Синяя зона: отсутствуют столбцы ${blueColumns.missing.join(', ')}`
-      )
+      messages.push(`Синяя зона: отсутствуют столбцы ${blueColumns.missing.join(', ')}`)
     }
     validationError.value = messages.join('. ')
-    console.warn('[Excel] Missing columns:', validationError.value)
     zoneData.green.rows = []
     zoneData.blue.rows = []
     zoneData.green.metrics = []
     zoneData.blue.metrics = []
+    zoneData.green.items = []
+    zoneData.blue.items = []
     statuses.value = []
     return
   }
 
   zoneData.green.rows = greenData.rows
   zoneData.blue.rows = blueData.rows
-  const greenStatusHeader = resolveActualHeader(
+
+  greenColumns.map[selectedStatusColumn.green] = resolveActualHeader(
     greenData.headerRow,
     selectedStatusColumn.green
   )
-  const blueStatusHeader = resolveActualHeader(
+  blueColumns.map[selectedStatusColumn.blue] = resolveActualHeader(
     blueData.headerRow,
     selectedStatusColumn.blue
   )
-  const greenValueHeader = resolveActualHeader(
+  greenColumns.map[selectedValueColumn.green] = resolveActualHeader(
     greenData.headerRow,
     selectedValueColumn.green
   )
-  const blueValueHeader = resolveActualHeader(
+  blueColumns.map[selectedValueColumn.blue] = resolveActualHeader(
     blueData.headerRow,
     selectedValueColumn.blue
   )
-  greenColumns.map[selectedStatusColumn.green] = greenStatusHeader
-  blueColumns.map[selectedStatusColumn.blue] = blueStatusHeader
-  greenColumns.map[selectedValueColumn.green] = greenValueHeader
-  blueColumns.map[selectedValueColumn.blue] = blueValueHeader
+
   zoneData.green.columnMap = greenColumns.map
   zoneData.blue.columnMap = blueColumns.map
 
-  zoneData.green.metrics = extractMetrics(
-    greenData.rows,
-    greenColumns.map,
-    selectedStatusColumn.green
-  )
-  zoneData.blue.metrics = extractMetrics(
-    blueData.rows,
-    blueColumns.map,
-    selectedStatusColumn.blue
-  )
+  zoneData.green.metrics = extractMetrics(greenData.rows, greenColumns.map, selectedStatusColumn.green)
+  zoneData.blue.metrics = extractMetrics(blueData.rows, blueColumns.map, selectedStatusColumn.blue)
   zoneData.green.items = extractDashboardItems(
     greenData.rows,
     greenColumns.map,
@@ -611,104 +616,52 @@ const processSheets = () => {
     selectedValueColumn.blue
   )
 
-  console.log('[Excel] Green metrics summary:', {
-    count: zoneData.green.metrics.length,
-    sample: zoneData.green.metrics.slice(0, 5),
-  })
-  console.log('[Excel] Blue metrics summary:', {
-    count: zoneData.blue.metrics.length,
-    sample: zoneData.blue.metrics.slice(0, 5),
-  })
-  console.log('[Excel] Green dashboard items summary:', {
-    count: zoneData.green.items.length,
-    sample: zoneData.green.items.slice(0, 5),
-  })
-  console.log('[Excel] Blue dashboard items summary:', {
-    count: zoneData.blue.items.length,
-    sample: zoneData.blue.items.slice(0, 5),
-  })
-
   const combinedStatuses = new Map()
-  zoneData.green.metrics.forEach((item) => {
-    if (!item.status) return
-    combinedStatuses.set(item.statusKey, item.statusDisplay)
-  })
-  zoneData.blue.metrics.forEach((item) => {
-    if (!item.status) return
-    combinedStatuses.set(item.statusKey, item.statusDisplay)
+  ;[...zoneData.green.metrics, ...zoneData.blue.metrics].forEach((item) => {
+    if (item.status) {
+      combinedStatuses.set(item.statusKey, item.statusDisplay)
+    }
   })
 
   statuses.value = Array.from(combinedStatuses.values())
-  console.log('[Excel] Unique statuses:', statuses.value)
-
-  const storedDescriptions = loadStoredDescriptions()
-  const storedColors = loadStoredColors()
-  if (!statuses.value.length) {
-    Object.keys(statusDescriptions).forEach((key) => delete statusDescriptions[key])
-    Object.keys(statusColors).forEach((key) => delete statusColors[key])
-    saveStoredDescriptions()
-    saveStoredColors()
-  }
-
-  readyStatuses.value = readyStatuses.value.filter((status) =>
-    statuses.value.includes(status)
-  )
-
-  statuses.value.forEach((status) => {
-    if (!(status in statusDescriptions)) {
-      statusDescriptions[status] = storedDescriptions[status] || ''
-    }
-    if (!(status in statusColorOverrides) && storedColors[status]) {
-      statusColorOverrides[status] = storedColors[status]
-    }
-  })
-
-  Object.keys(statusDescriptions).forEach((status) => {
-    if (!statuses.value.includes(status)) {
-      delete statusDescriptions[status]
-    }
-  })
-  syncStatusColors()
-  saveStoredDescriptions()
-  saveStoredColors()
+  syncCurrentStatusFields()
 }
 
 const updateDescription = ({ status, value }) => {
   statusDescriptions[status] = value
-  saveStoredDescriptions()
+  statusDescriptionsStore[status] = value
 }
 
 const updateColor = ({ status, value }) => {
   statusColorOverrides[status] = value
   statusColors[status] = value
-  saveStoredColors()
 }
 
 const updateReadyStatuses = (value) => {
   readyStatuses.value = value
-  console.log('[Status] Ready statuses updated:', readyStatuses.value)
-  syncStatusColors()
+  syncCurrentStatusFields()
 }
 
 const updateComment = (value) => {
   comment.value = value
-  saveStoredComment(value)
+}
+
+const setCardComment = ({ cardId, comment: text }) => {
+  metricComments[cardId] = text
+}
+
+const removeCardComment = (cardId) => {
+  delete metricComments[cardId]
 }
 
 const normalizeStatus = (status) => normalizeStatusKey(status) || ''
 
-const allMetrics = computed(() => [
-  ...zoneData.green.metrics,
-  ...zoneData.blue.metrics,
-])
-
+const allMetrics = computed(() => [...zoneData.green.metrics, ...zoneData.blue.metrics])
 const totalCount = computed(() => allMetrics.value.length)
 
 const readyCount = computed(() => {
   const readySet = new Set(readyStatuses.value.map(normalizeStatus))
-  return allMetrics.value.filter((item) =>
-    readySet.has(normalizeStatus(item.status))
-  ).length
+  return allMetrics.value.filter((item) => readySet.has(normalizeStatus(item.status))).length
 })
 
 const readinessPercent = computed(() => {
@@ -731,11 +684,11 @@ const blueStatusSummary = computed(() =>
     .join(', ')
 )
 
-const buildZoneView = (items, readySet, useSections) => {
+const buildZoneView = (items, readySet, zoneKey, useSections) => {
   const sections = []
   let currentSection = null
   let currentCard = null
-  let cardIndex = 0
+  const keyCounter = new Map()
 
   const ensureSection = (name = '') => {
     const section = { name, cards: [] }
@@ -743,12 +696,18 @@ const buildZoneView = (items, readySet, useSections) => {
     return section
   }
 
+  const makeCardId = (sectionName, cardName) => {
+    const base = `${zoneKey}|${sectionName || ''}|${cardName || ''}`
+    const count = keyCounter.get(base) || 0
+    keyCounter.set(base, count + 1)
+    return `${base}|${count}`
+  }
+
   items.forEach((item) => {
     const typeNormalized = normalizeValue(item.type)
+
     if (isSectionType(item.type)) {
-      if (!useSections) {
-        return
-      }
+      if (!useSections) return
       currentSection = ensureSection(item.name || 'Без названия раздела')
       currentCard = null
       return
@@ -764,14 +723,13 @@ const buildZoneView = (items, readySet, useSections) => {
 
     if (typeNormalized === 'метрика') {
       currentCard = {
-        id: `${useSections ? 'blue' : 'green'}-card-${cardIndex}`,
+        id: makeCardId(currentSection.name, item.name),
         name: item.name || 'Без названия метрики',
         mainValue: item.value,
         status: item.statusDisplay || item.status || '',
         values: [],
         problem,
       }
-      cardIndex += 1
       currentSection.cards.push(currentCard)
       return
     }
@@ -792,24 +750,13 @@ const buildZoneView = (items, readySet, useSections) => {
 const dashboardView = computed(() => {
   const readySet = new Set(readyStatuses.value.map(normalizeStatus))
   return {
-    green: buildZoneView(zoneData.green.items, readySet, false),
-    blue: buildZoneView(zoneData.blue.items, readySet, true),
+    green: buildZoneView(zoneData.green.items, readySet, 'green', false),
+    blue: buildZoneView(zoneData.blue.items, readySet, 'blue', true),
   }
 })
 
 const generateReport = async () => {
   generating.value = true
-  console.log('[Docx] Generating report...')
-  console.log('[Docx] Summary:', {
-    readinessPercent: readinessPercent.value,
-    readyCount: readyCount.value,
-    totalCount: totalCount.value,
-    greenStatusCounts: greenStatusCounts.value,
-    blueStatusCounts: blueStatusCounts.value,
-    statusDescriptions: { ...statusDescriptions },
-    comment: comment.value,
-  })
-
   try {
     await generateStatusReport({
       readinessPercent: readinessPercent.value,
@@ -820,7 +767,6 @@ const generateReport = async () => {
       statusDescriptions: { ...statusDescriptions },
       comment: comment.value,
     })
-    console.log('[Docx] Report saved successfully.')
   } catch (error) {
     console.error('[Docx] Failed to generate report:', error)
   } finally {
@@ -836,5 +782,11 @@ watch(sheetNames, (value) => {
   }
 })
 
-comment.value = loadStoredComment()
+refreshTemplateList()
 </script>
+
+<style scoped>
+.template-btn {
+  min-height: 56px;
+}
+</style>

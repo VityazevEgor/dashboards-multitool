@@ -7,7 +7,7 @@
       </div>
       <div class="d-flex flex-wrap align-center ga-3">
         <v-btn-toggle
-          v-model="themeMode"
+          v-model="themeModeProxy"
           color="primary"
           density="comfortable"
           mandatory
@@ -26,14 +26,11 @@
         </v-btn>
       </div>
     </div>
-    <v-card
-      class="pa-4 mb-4"
-      variant="outlined"
-      color="warning"
-    >
+
+    <v-card class="pa-4 mb-4" variant="outlined" color="warning">
       <div class="text-subtitle-2 font-weight-bold mb-2">Заготовленные комментарии</div>
       <v-textarea
-        v-model="preparedCommentsText"
+        v-model="preparedCommentsTextProxy"
         rows="3"
         variant="outlined"
         color="warning"
@@ -43,7 +40,7 @@
     </v-card>
 
     <v-checkbox
-      v-model="dimUncommented"
+      v-model="dimUncommentedProxy"
       color="warning"
       hide-details
       label="Затемнять карточки без комментариев"
@@ -107,7 +104,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import html2canvas from 'html2canvas'
 import ZoneView from './ZoneView.vue'
 
@@ -124,22 +121,57 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  themeMode: {
+    type: String,
+    default: 'dark',
+  },
+  dimUncommented: {
+    type: Boolean,
+    default: false,
+  },
+  preparedCommentsText: {
+    type: String,
+    default: '',
+  },
+  cardComments: {
+    type: Object,
+    default: () => ({}),
+  },
 })
+
+const emit = defineEmits([
+  'update:themeMode',
+  'update:dimUncommented',
+  'update:preparedCommentsText',
+  'set-card-comment',
+  'remove-card-comment',
+])
 
 const dashboardRef = ref(null)
 const exporting = ref(false)
-const themeMode = ref('dark')
-const dimUncommented = ref(false)
-const preparedCommentsText = ref('')
-const cardComments = reactive({})
 const commentDialog = ref(false)
 const selectedCardId = ref('')
 const selectedCardTitle = ref('')
 const selectedPreset = ref('')
 const commentDraft = ref('')
 
+const themeModeProxy = computed({
+  get: () => props.themeMode,
+  set: (value) => emit('update:themeMode', value),
+})
+
+const dimUncommentedProxy = computed({
+  get: () => props.dimUncommented,
+  set: (value) => emit('update:dimUncommented', value),
+})
+
+const preparedCommentsTextProxy = computed({
+  get: () => props.preparedCommentsText,
+  set: (value) => emit('update:preparedCommentsText', value),
+})
+
 const preparedCommentsList = computed(() =>
-  preparedCommentsText.value
+  props.preparedCommentsText
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -154,7 +186,7 @@ watch(selectedPreset, (value) => {
 const openCommentEditor = (card) => {
   selectedCardId.value = card.id
   selectedCardTitle.value = card.name || 'Без названия'
-  commentDraft.value = cardComments[card.id] || ''
+  commentDraft.value = props.cardComments?.[card.id] || ''
   selectedPreset.value = preparedCommentsList.value.includes(commentDraft.value)
     ? commentDraft.value
     : ''
@@ -165,16 +197,16 @@ const applyComment = () => {
   if (!selectedCardId.value) return
   const value = commentDraft.value.trim()
   if (value) {
-    cardComments[selectedCardId.value] = value
+    emit('set-card-comment', { cardId: selectedCardId.value, comment: value })
   } else {
-    delete cardComments[selectedCardId.value]
+    emit('remove-card-comment', selectedCardId.value)
   }
   commentDialog.value = false
 }
 
 const removeComment = () => {
   if (selectedCardId.value) {
-    delete cardComments[selectedCardId.value]
+    emit('remove-card-comment', selectedCardId.value)
   }
   commentDialog.value = false
 }
@@ -188,7 +220,7 @@ const exportImage = async () => {
     const canvas = await html2canvas(dashboardRef.value, {
       scale: 2,
       useCORS: true,
-      backgroundColor: themeMode.value === 'light' ? '#f8fafc' : '#0e0f14',
+      backgroundColor: props.themeMode === 'light' ? '#f8fafc' : '#0e0f14',
     })
     const dataUrl = canvas.toDataURL('image/png')
     const link = document.createElement('a')
