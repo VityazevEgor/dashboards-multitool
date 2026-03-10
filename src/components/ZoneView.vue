@@ -7,18 +7,30 @@
         {{ section.name }}
       </div>
 
+      <template
+        v-for="(rowCards, rowIndex) in getRows(section.cards)"
+        :key="`${title}-${sectionIndex}-row-${rowIndex}`"
+      >
       <v-row>
         <v-col
-          v-for="(card, cardIndex) in section.cards"
-          :key="`${title}-${sectionIndex}-${cardIndex}`"
+          v-for="(card, cardIndex) in rowCards"
+          :key="`${title}-${sectionIndex}-${rowIndex}-${cardIndex}`"
           class="d-flex"
           cols="12"
           sm="6"
           md="3"
         >
+          <div class="w-100">
           <v-card
-            :class="['pa-3 metric-card w-100', `theme-${themeMode}`, card.problem ? 'problem-card' : 'ok-card']"
+            :class="[
+              'pa-3 metric-card w-100',
+              `theme-${themeMode}`,
+              card.problem ? 'problem-card' : 'ok-card',
+              dimUncommented ? 'dim-mode' : '',
+              showComment(card) ? 'commented-card' : '',
+            ]"
             :style="cardStyle(card.status)"
+            @click="handleCardClick(card)"
             elevation="0"
           >
             <div class="text-subtitle-2 font-weight-bold mb-2">{{ card.name }}</div>
@@ -40,7 +52,7 @@
             <div v-if="card.values.length" class="d-flex flex-column ga-1">
               <div
                 v-for="(valueItem, valueIndex) in card.values"
-                :key="`${title}-${sectionIndex}-${cardIndex}-${valueIndex}`"
+                :key="`${title}-${sectionIndex}-${rowIndex}-${cardIndex}-${valueIndex}`"
                 class="value-line"
               >
                 <span class="value-name">{{ valueItem.name }}</span>
@@ -51,8 +63,29 @@
               </div>
             </div>
           </v-card>
+          </div>
         </v-col>
       </v-row>
+      <v-row
+        v-if="rowHasComments(rowCards)"
+        class="mb-2 row-comments"
+      >
+        <v-col
+          v-for="(card, cardIndex) in rowCards"
+          :key="`${title}-${sectionIndex}-${rowIndex}-comment-${cardIndex}`"
+          cols="12"
+          sm="6"
+          md="3"
+        >
+          <div v-if="showComment(card)" class="comment-cell">
+            <div class="comment-connector" />
+            <div class="card-comment">
+              {{ cardComments[card.id] }}
+            </div>
+          </div>
+        </v-col>
+      </v-row>
+      </template>
     </template>
   </v-card>
 </template>
@@ -75,6 +108,14 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  dimUncommented: {
+    type: Boolean,
+    default: false,
+  },
+  cardComments: {
+    type: Object,
+    default: () => ({}),
+  },
 })
 
 const statusStyle = (status) => {
@@ -86,6 +127,25 @@ const cardStyle = (status) => {
   const color = props.statusColors?.[status]
   return color ? { borderColor: color } : null
 }
+
+const emit = defineEmits(['card-click'])
+
+const showComment = (card) => Boolean(props.cardComments?.[card.id])
+
+const handleCardClick = (card) => {
+  emit('card-click', card)
+}
+
+const getRows = (cards = []) => {
+  const rows = []
+  for (let i = 0; i < cards.length; i += 4) {
+    rows.push(cards.slice(i, i + 4))
+  }
+  return rows
+}
+
+const rowHasComments = (rowCards = []) =>
+  rowCards.some((card) => showComment(card))
 </script>
 
 <style scoped>
@@ -111,6 +171,8 @@ const cardStyle = (status) => {
 .metric-card {
   height: 100%;
   border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .metric-card.theme-dark {
@@ -205,5 +267,78 @@ const cardStyle = (status) => {
 
 .metric-card.theme-light.problem-card {
   border-color: rgba(239, 68, 68, 0.5);
+}
+
+.metric-card.dim-mode {
+  cursor: pointer;
+  opacity: 0.38;
+}
+
+.metric-card.dim-mode.commented-card {
+  opacity: 1;
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.6);
+}
+
+.card-comment {
+  border-radius: 8px;
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.15);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fef3c7;
+  white-space: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.row-comments {
+  min-height: 52px;
+}
+
+.comment-cell {
+  position: relative;
+  padding-top: 12px;
+}
+
+.comment-connector {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 14px;
+  background: rgba(250, 204, 21, 0.7);
+}
+
+.comment-connector::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 7px solid rgba(250, 204, 21, 0.9);
+}
+
+.theme-light .comment-connector {
+  background: rgba(180, 83, 9, 0.6);
+}
+
+.theme-light .comment-connector::before {
+  border-bottom-color: rgba(180, 83, 9, 0.75);
+}
+
+.theme-light .card-comment {
+  color: #78350f;
+  background: rgba(250, 204, 21, 0.22);
+  border-color: rgba(180, 83, 9, 0.4);
 }
 </style>

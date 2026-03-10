@@ -735,6 +735,7 @@ const buildZoneView = (items, readySet, useSections) => {
   const sections = []
   let currentSection = null
   let currentCard = null
+  let cardIndex = 0
 
   const ensureSection = (name = '') => {
     const section = { name, cards: [] }
@@ -763,12 +764,14 @@ const buildZoneView = (items, readySet, useSections) => {
 
     if (typeNormalized === 'метрика') {
       currentCard = {
+        id: `${useSections ? 'blue' : 'green'}-card-${cardIndex}`,
         name: item.name || 'Без названия метрики',
         mainValue: item.value,
         status: item.statusDisplay || item.status || '',
         values: [],
         problem,
       }
+      cardIndex += 1
       currentSection.cards.push(currentCard)
       return
     }

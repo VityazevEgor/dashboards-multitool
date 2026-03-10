@@ -26,6 +26,29 @@
         </v-btn>
       </div>
     </div>
+    <v-card
+      class="pa-4 mb-4"
+      variant="outlined"
+      color="warning"
+    >
+      <div class="text-subtitle-2 font-weight-bold mb-2">Заготовленные комментарии</div>
+      <v-textarea
+        v-model="preparedCommentsText"
+        rows="3"
+        variant="outlined"
+        color="warning"
+        hide-details
+        placeholder="Один комментарий на строку"
+      />
+    </v-card>
+
+    <v-checkbox
+      v-model="dimUncommented"
+      color="warning"
+      hide-details
+      label="Затемнять карточки без комментариев"
+      class="mb-3"
+    />
 
     <div ref="dashboardRef" :class="['dashboard-export-block pa-4', `theme-${themeMode}`]">
       <zone-view
@@ -33,20 +56,58 @@
         :zone-data="greenZone"
         :theme-mode="themeMode"
         :status-colors="statusColors"
+        :dim-uncommented="dimUncommented"
+        :card-comments="cardComments"
         class="mb-6"
+        @card-click="openCommentEditor"
       />
       <zone-view
         title="Синяя зона"
         :zone-data="blueZone"
         :theme-mode="themeMode"
         :status-colors="statusColors"
+        :dim-uncommented="dimUncommented"
+        :card-comments="cardComments"
+        @card-click="openCommentEditor"
       />
     </div>
+
+    <v-dialog v-model="commentDialog" max-width="560">
+      <v-card>
+        <v-card-title class="text-subtitle-1 font-weight-bold">
+          Комментарий для карточки
+        </v-card-title>
+        <v-card-text>
+          <div class="text-body-2 mb-3">{{ selectedCardTitle }}</div>
+          <v-select
+            v-model="selectedPreset"
+            :items="preparedCommentsList"
+            label="Выберите из заготовок"
+            variant="outlined"
+            clearable
+            class="mb-3"
+          />
+          <v-textarea
+            v-model="commentDraft"
+            label="Или введите свой комментарий"
+            variant="outlined"
+            rows="3"
+            hide-details
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="removeComment">Удалить</v-btn>
+          <v-btn variant="text" @click="commentDialog = false">Отмена</v-btn>
+          <v-btn color="primary" variant="flat" @click="applyComment">Сохранить</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-card>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import html2canvas from 'html2canvas'
 import ZoneView from './ZoneView.vue'
 
@@ -68,6 +129,55 @@ const props = defineProps({
 const dashboardRef = ref(null)
 const exporting = ref(false)
 const themeMode = ref('dark')
+const dimUncommented = ref(false)
+const preparedCommentsText = ref('')
+const cardComments = reactive({})
+const commentDialog = ref(false)
+const selectedCardId = ref('')
+const selectedCardTitle = ref('')
+const selectedPreset = ref('')
+const commentDraft = ref('')
+
+const preparedCommentsList = computed(() =>
+  preparedCommentsText.value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+)
+
+watch(selectedPreset, (value) => {
+  if (value) {
+    commentDraft.value = value
+  }
+})
+
+const openCommentEditor = (card) => {
+  selectedCardId.value = card.id
+  selectedCardTitle.value = card.name || 'Без названия'
+  commentDraft.value = cardComments[card.id] || ''
+  selectedPreset.value = preparedCommentsList.value.includes(commentDraft.value)
+    ? commentDraft.value
+    : ''
+  commentDialog.value = true
+}
+
+const applyComment = () => {
+  if (!selectedCardId.value) return
+  const value = commentDraft.value.trim()
+  if (value) {
+    cardComments[selectedCardId.value] = value
+  } else {
+    delete cardComments[selectedCardId.value]
+  }
+  commentDialog.value = false
+}
+
+const removeComment = () => {
+  if (selectedCardId.value) {
+    delete cardComments[selectedCardId.value]
+  }
+  commentDialog.value = false
+}
 
 const exportImage = async () => {
   if (!dashboardRef.value) return
