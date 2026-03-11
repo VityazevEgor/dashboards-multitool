@@ -646,8 +646,11 @@ const updateComment = (value) => {
   comment.value = value
 }
 
-const setCardComment = ({ cardId, comment: text }) => {
-  metricComments[cardId] = text
+const setCardComment = ({ cardId, comment: text, color }) => {
+  metricComments[cardId] = {
+    text,
+    color: color || '#facc15',
+  }
 }
 
 const removeCardComment = (cardId) => {

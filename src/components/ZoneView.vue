@@ -77,10 +77,10 @@
           sm="6"
           md="3"
         >
-          <div v-if="showComment(card)" class="comment-cell">
+          <div v-if="showComment(card)" class="comment-cell" :style="commentVars(card)">
             <div class="comment-connector" />
             <div class="card-comment">
-              {{ cardComments[card.id] }}
+              {{ getCommentText(card) }}
             </div>
           </div>
         </v-col>
@@ -130,7 +130,54 @@ const cardStyle = (status) => {
 
 const emit = defineEmits(['card-click'])
 
-const showComment = (card) => Boolean(props.cardComments?.[card.id])
+const getCommentData = (card) => props.cardComments?.[card.id]
+
+const getCommentText = (card) => {
+  const data = getCommentData(card)
+  if (!data) return ''
+  return typeof data === 'string' ? data : data.text || ''
+}
+
+const getCommentColor = (card) => {
+  const data = getCommentData(card)
+  if (!data || typeof data === 'string') return '#facc15'
+  return data.color || '#facc15'
+}
+
+const showComment = (card) => Boolean(getCommentText(card).trim())
+
+const hexToRgb = (hex) => {
+  const normalized = (hex || '').replace('#', '')
+  const full = normalized.length === 3
+    ? normalized.split('').map((char) => char + char).join('')
+    : normalized
+  const value = Number.parseInt(full, 16)
+  if (Number.isNaN(value)) {
+    return { r: 250, g: 204, b: 21 }
+  }
+  return {
+    r: (value >> 16) & 255,
+    g: (value >> 8) & 255,
+    b: value & 255,
+  }
+}
+
+const getReadableTextColor = (hex) => {
+  const { r, g, b } = hexToRgb(hex)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  return luminance > 0.63 ? '#111827' : '#f8fafc'
+}
+
+const commentVars = (card) => {
+  const color = getCommentColor(card)
+  const { r, g, b } = hexToRgb(color)
+  return {
+    '--comment-border-color': `rgba(${r}, ${g}, ${b}, 0.62)`,
+    '--comment-bg-color': `rgba(${r}, ${g}, ${b}, 0.22)`,
+    '--comment-connector-color': `rgba(${r}, ${g}, ${b}, 0.9)`,
+    '--comment-text-color': getReadableTextColor(color),
+  }
+}
 
 const handleCardClick = (card) => {
   emit('card-click', card)
@@ -282,12 +329,12 @@ const rowHasComments = (rowCards = []) =>
 
 .card-comment {
   border-radius: 8px;
-  border: 1px solid rgba(250, 204, 21, 0.45);
-  background: rgba(250, 204, 21, 0.15);
+  border: 1px solid var(--comment-border-color, rgba(250, 204, 21, 0.45));
+  background: var(--comment-bg-color, rgba(250, 204, 21, 0.15));
   padding: 8px 10px;
   font-size: 12px;
   font-weight: 600;
-  color: #fef3c7;
+  color: var(--comment-text-color, #fef3c7);
   white-space: normal;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -312,7 +359,7 @@ const rowHasComments = (rowCards = []) =>
   transform: translateX(-50%);
   width: 2px;
   height: 14px;
-  background: rgba(250, 204, 21, 0.7);
+  background: var(--comment-connector-color, rgba(250, 204, 21, 0.9));
 }
 
 .comment-connector::before {
@@ -325,15 +372,7 @@ const rowHasComments = (rowCards = []) =>
   height: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-bottom: 7px solid rgba(250, 204, 21, 0.9);
-}
-
-.theme-light .comment-connector {
-  background: rgba(180, 83, 9, 0.6);
-}
-
-.theme-light .comment-connector::before {
-  border-bottom-color: rgba(180, 83, 9, 0.75);
+  border-bottom: 7px solid var(--comment-connector-color, rgba(250, 204, 21, 0.9));
 }
 
 .theme-light .card-comment {

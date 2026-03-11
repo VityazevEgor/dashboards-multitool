@@ -90,6 +90,15 @@
             variant="outlined"
             rows="3"
             hide-details
+            class="mb-3"
+          />
+          <div class="text-caption text-medium-emphasis mb-2">Цвет комментария</div>
+          <v-color-picker
+            v-model="commentColorDraft"
+            mode="hex"
+            :modes="['hex']"
+            hide-inputs
+            show-swatches
           />
         </v-card-text>
         <v-card-actions>
@@ -154,6 +163,7 @@ const selectedCardId = ref('')
 const selectedCardTitle = ref('')
 const selectedPreset = ref('')
 const commentDraft = ref('')
+const commentColorDraft = ref('#facc15')
 
 const themeModeProxy = computed({
   get: () => props.themeMode,
@@ -186,7 +196,14 @@ watch(selectedPreset, (value) => {
 const openCommentEditor = (card) => {
   selectedCardId.value = card.id
   selectedCardTitle.value = card.name || 'Без названия'
-  commentDraft.value = props.cardComments?.[card.id] || ''
+  const current = props.cardComments?.[card.id]
+  if (current && typeof current === 'object') {
+    commentDraft.value = current.text || ''
+    commentColorDraft.value = current.color || '#facc15'
+  } else {
+    commentDraft.value = current || ''
+    commentColorDraft.value = '#facc15'
+  }
   selectedPreset.value = preparedCommentsList.value.includes(commentDraft.value)
     ? commentDraft.value
     : ''
@@ -197,7 +214,11 @@ const applyComment = () => {
   if (!selectedCardId.value) return
   const value = commentDraft.value.trim()
   if (value) {
-    emit('set-card-comment', { cardId: selectedCardId.value, comment: value })
+    emit('set-card-comment', {
+      cardId: selectedCardId.value,
+      comment: value,
+      color: commentColorDraft.value || '#facc15',
+    })
   } else {
     emit('remove-card-comment', selectedCardId.value)
   }
