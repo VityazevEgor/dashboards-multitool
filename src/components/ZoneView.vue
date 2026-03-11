@@ -162,20 +162,15 @@ const hexToRgb = (hex) => {
   }
 }
 
-const getReadableTextColor = (hex) => {
-  const { r, g, b } = hexToRgb(hex)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.63 ? '#111827' : '#f8fafc'
-}
-
 const commentVars = (card) => {
   const color = getCommentColor(card)
   const { r, g, b } = hexToRgb(color)
+  const textColor = props.themeMode === 'dark' ? '#f8fafc' : '#111827'
   return {
     '--comment-border-color': `rgba(${r}, ${g}, ${b}, 0.62)`,
     '--comment-bg-color': `rgba(${r}, ${g}, ${b}, 0.22)`,
     '--comment-connector-color': `rgba(${r}, ${g}, ${b}, 0.9)`,
-    '--comment-text-color': getReadableTextColor(color),
+    '--comment-text-color': textColor,
   }
 }
 
@@ -375,9 +370,4 @@ const rowHasComments = (rowCards = []) =>
   border-bottom: 7px solid var(--comment-connector-color, rgba(250, 204, 21, 0.9));
 }
 
-.theme-light .card-comment {
-  color: #78350f;
-  background: rgba(250, 204, 21, 0.22);
-  border-color: rgba(180, 83, 9, 0.4);
-}
 </style>
