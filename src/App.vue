@@ -29,6 +29,12 @@
             <dashboard-parser @back="selectedUtility = ''" />
           </div>
         </v-slide-y-transition>
+
+        <v-slide-y-transition>
+          <div v-if="selectedUtility === 'table-diff'">
+            <table-diff @back="selectedUtility = ''" />
+          </div>
+        </v-slide-y-transition>
       </v-container>
     </v-main>
   </v-app>
@@ -39,6 +45,7 @@ import { ref } from 'vue'
 import UtilitySelector from './components/UtilitySelector.vue'
 import StatusGenerator from './components/StatusGenerator.vue'
 import DashboardParser from './components/DashboardParser.vue'
+import TableDiff from './components/TableDiff.vue'
 
 const selectedUtility = ref('')
 

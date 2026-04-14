@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <v-row class="mb-6" justify="center">
     <v-col cols="12" md="10" lg="8">
       <v-card class="pa-6" color="surface" elevation="6">
@@ -24,6 +24,7 @@
               </v-btn>
             </v-card>
           </v-col>
+
           <v-col cols="12" md="6">
             <v-card class="pa-4" variant="tonal" color="secondary">
               <div class="text-h6 font-weight-bold mb-2">
@@ -33,6 +34,20 @@
                 Вставьте HTML код и получите Excel таблицу с метриками.
               </div>
               <v-btn color="secondary" variant="flat" @click="select('parser')">
+                Перейти
+              </v-btn>
+            </v-card>
+          </v-col>
+
+          <v-col cols="12">
+            <v-card class="pa-4" variant="tonal" color="info">
+              <div class="text-h6 font-weight-bold mb-2">
+                Table Diff
+              </div>
+              <div class="text-body-2 text-medium-emphasis mb-4">
+                Сравните два Excel файла, выберите лист и столбец для анализа, затем скачайте XLSX со строками, в которых найдены изменения.
+              </div>
+              <v-btn color="info" variant="flat" @click="select('table-diff')">
                 Перейти
               </v-btn>
             </v-card>
